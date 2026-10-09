@@ -5,8 +5,10 @@ export type Block = {
   type: BlockType;
   x: number;
   y: number;
-  rotation: number;
-  content: string;
+  width: number;
+  height: number;
+  rotation: number; // degrees
+  content: string;  // text, or an image URL / data URL
 };
 
 export type Page = {
