@@ -3,7 +3,7 @@ import type { CSSProperties } from "react";
 export const PAPERS: Record<string, { label: string; css: CSSProperties }> = {
   plain: {
     label: "Plain",
-    css: { backgroundColor: "#f3e3c3", backgroundImage: "url(/textures/page.jpg)", backgroundSize: "cover" },
+    css: { backgroundColor: "#f3e3c3", backgroundImage: "url(/textures/page.png)", backgroundSize: "cover" },
   },
   grid: {
     label: "Grid",
