@@ -7,17 +7,20 @@ export type Block = {
   y: number;
   width: number;
   height: number;
-  rotation: number; // degrees
-  content: string;  // text, or an image URL / data URL
+  rotation: number;
+  content: string;
 };
 
 export type Page = {
   id: string;
   title: string;
+  background: string; // key into PAPERS (plain, grid, lined...)
   blocks: Block[];
+  createdAt: number;
+  updatedAt: number;
 };
 
 export type BookData = {
-  version: 1;
+  version: 2;
   pages: Page[];
 };
