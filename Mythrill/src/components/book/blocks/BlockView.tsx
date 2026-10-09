@@ -10,13 +10,14 @@ export default function BlockView({ block, onSelect }: Props) {
 
   const style: CSSProperties = {
     position: "absolute",
-    left: block.x,
-    top: block.y,
+    left: 0,
+    top: 0,
     width: block.width,
     height: block.height,
-    transform: `rotate(${block.rotation}deg)`,
+    transform: `translate(${block.x}px, ${block.y}px) rotate(${block.rotation}deg)`,
     userSelect: "none",
     cursor: "move",
+    touchAction: "none",
   };
 
   return (
@@ -35,7 +36,7 @@ export default function BlockView({ block, onSelect }: Props) {
             autoFocus
             defaultValue={block.content}
             onBlur={(e) => {
-              updateBlock(block.id, { content: e.target.value });
+              if (e.target.value !== block.content) updateBlock(block.id, { content: e.target.value });
               setEditing(false);
             }}
             style={{ width: "100%", height: "100%", font: "inherit", resize: "none", boxSizing: "border-box" }}
@@ -50,7 +51,10 @@ export default function BlockView({ block, onSelect }: Props) {
         <img
           src={block.content}
           draggable={false}
-          style={{ width: "100%", height: "100%", objectFit: "cover", border: "8px solid #fff", boxSizing: "border-box", boxShadow: "0 3px 8px rgba(0,0,0,.3)" }}
+          style={{
+            width: "100%", height: "100%", objectFit: "cover",
+            border: "8px solid #fff", boxSizing: "border-box", boxShadow: "0 3px 8px rgba(0,0,0,.3)",
+          }}
         />
       )}
 

@@ -1,6 +1,7 @@
 import { create } from "zustand";
 
 type BookState = {
+  setIndex: (n: number) => void;
   currentIndex: number;
   totalPages: number;
   setTotal: (n: number) => void;
@@ -9,6 +10,7 @@ type BookState = {
 };
 
 export const useBookStore = create<BookState>((set) => ({
+  setIndex: (n) => set((s) => ({ currentIndex: Math.max(0, Math.min(n, s.totalPages)) })),
   currentIndex: 0,
   totalPages: 0,
   setTotal: (n) => set({ totalPages: n }),

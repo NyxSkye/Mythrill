@@ -1,24 +1,19 @@
 import { useEffect } from "react";
 import { usePagesStore } from "../../store/usePagesStore";
+import { useEditorShortcuts } from "../../hooks/useEditorShortcuts";
 import PageSidebar from "../sidebar/PageSidebar";
 import PageCanvas from "./PageCanvas";
 
 export default function BookEditor() {
-  const { pages, currentPageId, selectedBlockId, saveState, init, selectPage, removeBlock } =
-    usePagesStore();
-
+  const pages = usePagesStore((s) => s.pages);
+  const currentPageId = usePagesStore((s) => s.currentPageId);
+  const selectedBlockId = usePagesStore((s) => s.selectedBlockId);
+  const saveState = usePagesStore((s) => s.saveState);
+  const canUndo = usePagesStore((s) => s.past.length > 0);
+  const canRedo = usePagesStore((s) => s.future.length > 0);
+  const { init, selectPage, undo, redo, removeBlock, duplicateSelected, reorderBlock, clearPage } = usePagesStore.getState();
   useEffect(() => { init(); }, [init]);
-
-  // Delete key removes the selected block, but not while typing
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      const tag = (e.target as HTMLElement).tagName;
-      if (tag === "TEXTAREA" || tag === "INPUT" || tag === "SELECT") return;
-      if ((e.key === "Delete" || e.key === "Backspace") && selectedBlockId) removeBlock(selectedBlockId);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [selectedBlockId, removeBlock]);
+  useEditorShortcuts();
 
   const idx = pages.findIndex((p) => p.id === currentPageId);
   const spread = idx < 0 ? 0 : Math.floor((idx + 1) / 2);
@@ -34,14 +29,37 @@ export default function BookEditor() {
 
   if (idx < 0) return <div style={{ padding: 24 }}>Loading…</div>;
 
+  const has = !!selectedBlockId;
+
   return (
     <div style={{ display: "flex", height: "100%" }}>
       <PageSidebar />
 
       <main style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 12, padding: 16, overflow: "auto" }}>
-        <span style={{ opacity: 0.6, fontSize: 13, height: 18 }}>
-          {saveState === "saving" ? "Saving…" : saveState === "saved" ? "Saved ✓" : ""}
-        </span>
+        {/* Toolbar */}
+        <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+          <button onClick={undo} disabled={!canUndo} title="Undo (Ctrl+Z)">↶ Undo</button>
+          <button onClick={redo} disabled={!canRedo} title="Redo (Ctrl+Shift+Z)">↷ Redo</button>
+          <span style={{ width: 12 }} />
+          <button disabled={!has} onClick={duplicateSelected} title="Duplicate (Ctrl+D)">⧉ Duplicate</button>
+          <button disabled={!has} onClick={() => has && reorderBlock(selectedBlockId!, "front")}>▲ Front</button>
+          <button disabled={!has} onClick={() => has && reorderBlock(selectedBlockId!, "back")}>▼ Back</button>
+          <button disabled={!has} onClick={() => has && removeBlock(selectedBlockId!)} title="Delete (Del)">🗑 Delete</button>
+          <button
+            onClick={() => {
+              const page = pages[idx];
+              if (page.blocks.length && confirm(`Clear everything on "${page.title}"? You can undo with Ctrl+Z.`)) {
+                clearPage(page.id);
+              }
+            }}
+            title="Remove all elements from this page"
+          >
+            🧹 Clear page
+          </button>
+          <span style={{ opacity: 0.6, fontSize: 13, width: 70 }}>
+            {saveState === "saving" ? "Saving…" : saveState === "saved" ? "Saved ✓" : ""}
+          </span>
+        </div>
 
         <div style={{ display: "flex", background: "#5a3a1a", padding: 18, borderRadius: 10 }}>
           <PageCanvas page={left} side="left" active={left?.id === currentPageId} />

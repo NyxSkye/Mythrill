@@ -1,15 +1,26 @@
 import { useEffect, useRef } from "react";
 import MoveableLib from "moveable";
-import type { OnDrag, OnResize, OnRotate } from "moveable";
+import type { OnDrag, OnDragStart, OnResize, OnResizeStart, OnRotate, OnRotateStart } from "moveable";
 import type { Page } from "../../types/book";
 import { usePagesStore } from "../../store/usePagesStore";
 import { PAPERS } from "../../lib/papers";
 import BlockView from "./blocks/BlockView";
 
-export const PAGE_W = 400;
-export const PAGE_H = 400;
+export const PAGE_W = 420;
+export const PAGE_H = 570;
 
 type Props = { page: Page | undefined; side: "left" | "right"; active: boolean };
+
+type Frame = { x: number; y: number; w: number; h: number; r: number };
+
+// Read the block's saved values straight from the store (always the latest)
+function readFrame(id: string): Frame {
+  for (const p of usePagesStore.getState().pages) {
+    const b = p.blocks.find((x) => x.id === id);
+    if (b) return { x: b.x, y: b.y, w: b.width, h: b.height, r: b.rotation };
+  }
+  return { x: 0, y: 0, w: 100, h: 100, r: 0 };
+}
 
 export default function PageCanvas({ page, side, active }: Props) {
   const outerRef = useRef<HTMLDivElement>(null);
@@ -30,21 +41,57 @@ export default function PageCanvas({ page, side, active }: Props) {
     if (!container || !el || !selectedId) return;
 
     const id = selectedId;
+    let f: Frame = readFrame(id);
+
+    const apply = (t: HTMLElement | SVGElement) => {
+      t.style.width = `${f.w}px`;
+      t.style.height = `${f.h}px`;
+      t.style.transform = `translate(${f.x}px, ${f.y}px) rotate(${f.r}deg)`;
+    };
+    // One store update per gesture = one undo step
+    const commit = () =>
+      updateBlock(id, { x: f.x, y: f.y, width: f.w, height: f.h, rotation: f.r });
+
     const m = new MoveableLib(container, {
       target: el,
       draggable: true,
       resizable: true,
       rotatable: true,
       keepRatio: selectedType !== "text",
+      origin: false,
       throttleDrag: 0,
       throttleResize: 0,
       throttleRotate: 0,
     });
-    m.on("drag", (e: OnDrag) => updateBlock(id, { x: e.left, y: e.top }));
-    m.on("resize", (e: OnResize) =>
-      updateBlock(id, { width: e.width, height: e.height, x: e.drag.left, y: e.drag.top })
-    );
-    m.on("rotate", (e: OnRotate) => updateBlock(id, { rotation: e.absoluteRotation }));
+
+    m.on("dragStart", (e: OnDragStart) => { f = readFrame(id); e.set([f.x, f.y]); });
+    m.on("drag", (e: OnDrag) => {
+      f.x = e.beforeTranslate[0];
+      f.y = e.beforeTranslate[1];
+      apply(e.target);
+    });
+    m.on("dragEnd", (e) => { if (e.isDrag) commit(); });
+
+    m.on("resizeStart", (e: OnResizeStart) => {
+      f = readFrame(id);
+      e.setOrigin(["%", "%"]);
+      if (e.dragStart) e.dragStart.set([f.x, f.y]);
+    });
+    m.on("resize", (e: OnResize) => {
+      f.w = e.width;
+      f.h = e.height;
+      f.x = e.drag.beforeTranslate[0];
+      f.y = e.drag.beforeTranslate[1];
+      apply(e.target);
+    });
+    m.on("resizeEnd", (e) => { if (e.isDrag) commit(); });
+
+    m.on("rotateStart", (e: OnRotateStart) => { f = readFrame(id); e.set(f.r); });
+    m.on("rotate", (e: OnRotate) => {
+      f.r = e.beforeRotate;
+      apply(e.target);
+    });
+    m.on("rotateEnd", (e) => { if (e.isDrag) commit(); });
 
     moveableRef.current = m;
     return () => {
@@ -53,12 +100,12 @@ export default function PageCanvas({ page, side, active }: Props) {
     };
   }, [selectedId, selectedType, updateBlock]);
 
+  // Re-align the handles after undo, redo, or any data change
   useEffect(() => {
     moveableRef.current?.updateRect();
   }, [selected]);
 
   const paper = PAPERS[page?.background ?? "plain"] ?? PAPERS.plain;
-  // Darken the edge near the spine so the two pages feel like one book
   const spineShade =
     side === "left"
       ? "linear-gradient(to left, rgba(60,35,10,.28), transparent 14%)"
@@ -67,8 +114,10 @@ export default function PageCanvas({ page, side, active }: Props) {
   return (
     <div
       ref={outerRef}
-      onMouseDown={() => {
+      onMouseDown={(e) => {
         if (!page) return;
+        // pressing a Moveable handle must not count as "clicked empty paper"
+        if ((e.target as HTMLElement).closest(".moveable-control-box")) return;
         if (!active) selectPage(page.id);
         else selectBlock(null);
       }}
