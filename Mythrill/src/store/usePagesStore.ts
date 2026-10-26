@@ -121,9 +121,14 @@ export const usePagesStore = create<PagesState>((set, get) => {
       const s = get();
       const from = s.pages.findIndex((p) => p.id === id);
       if (from < 0 || toIndex < 0 || toIndex >= s.pages.length) return;
-      const pages = [...s.pages];
-      const [moved] = pages.splice(from, 1);
-      pages.splice(toIndex, 0, moved);
+      const reordered = [...s.pages];
+      const [moved] = reordered.splice(from, 1);
+      reordered.splice(toIndex, 0, moved);
+      const pages = reordered.map((page, index) =>
+        /^Page \d+$/i.test(page.title)
+          ? touch(page, { title: `Page ${index + 1}` })
+          : page
+      );
       commit(pages);
     },
 
