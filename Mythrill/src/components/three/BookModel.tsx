@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { useGLTF } from "@react-three/drei";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
@@ -18,6 +18,10 @@ const MODEL_ROTATION: [number, number, number] = [-5, 0, 0];
 // ---- TEXTURE TUNING ----
 const TEX_ROTATION = 0; // radians: try Math.PI / 2, Math.PI, -Math.PI / 2 if the page art is turned
 const WINDOW = 4;       // how many sheets around the open spread get textures
+
+// ---- RECENTER TUNING ----
+const RECENTER_SPEED = 4;  // higher = snappier slide
+const RECENTER_TUNE = 1;   // 1 = exact centering; nudge (e.g. 0.9 or 1.1) if it looks slightly off
 
 type Sheet = { mesh: THREE.Mesh; front: THREE.Mesh; back: THREE.Mesh };
 
@@ -72,6 +76,8 @@ export default function BookModel() {
   const currentIndex = useBookStore((s) => s.currentIndex);
   const pages = usePagesStore((s) => s.pages);
 
+  const groupRef = useRef<THREE.Group>(null);
+
   const sheetCount = Math.min(Math.ceil(pages.length / 2), 61);
 
   const parts = useMemo(() => {
@@ -92,6 +98,15 @@ export default function BookModel() {
     });
     return { front, sheets, back };
   }, [scene]);
+
+  // Half the page width = distance from the spine to the middle of a closed book
+  const halfWidth = useMemo(() => {
+    const sheet = parts.sheets[0];
+    if (!sheet) return 0;
+    sheet.geometry.computeBoundingBox();
+    const box = sheet.geometry.boundingBox!;
+    return (box.min.x + box.max.x) / 2; // ~1.21 from your logs
+  }, [parts]);
 
   // Two face overlays per sheet. Reused if they exist, and keys reset so a remount repaints.
   const faces: Sheet[] = useMemo(
@@ -158,14 +173,27 @@ export default function BookModel() {
 
   useFrame((_, dt) => {
     const current = useBookStore.getState().currentIndex;
+
+    // page flipping
     flippers.forEach((p, i) => {
       const target = p.userData.baseRot + (i < current ? Math.PI * SIGN : 0);
       p.rotation[AXIS] = THREE.MathUtils.damp(p.rotation[AXIS], target, 6, dt);
     });
+
+    // recentering
+    const g = groupRef.current;
+    if (!g) return;
+    const total = flippers.length;
+    const shift = halfWidth * MODEL_SCALE * RECENTER_TUNE;
+    const targetX =
+      current <= 0 ? MODEL_POSITION[0]       // closed, front up
+      : current >= total ? MODEL_POSITION[0] + 2 * shift // closed, back up
+      : MODEL_POSITION[0] + shift;                           // open
+    g.position.x = THREE.MathUtils.damp(g.position.x, targetX, RECENTER_SPEED, dt);
   });
 
   return (
-    <group scale={MODEL_SCALE} position={MODEL_POSITION} rotation={MODEL_ROTATION}>
+    <group ref={groupRef} scale={MODEL_SCALE} position={MODEL_POSITION} rotation={MODEL_ROTATION}>
       <primitive object={scene} />
     </group>
   );
