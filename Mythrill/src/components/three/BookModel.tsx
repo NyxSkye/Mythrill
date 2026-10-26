@@ -16,17 +16,16 @@ const MODEL_POSITION: [number, number, number] = [0, 0, 0];
 const MODEL_ROTATION: [number, number, number] = [-5, 0, 0];
 
 // ---- TEXTURE TUNING ----
-const TEX_ROTATION = 0; // radians: try Math.PI / 2, Math.PI, -Math.PI / 2 if the page art is turned
-const WINDOW = 4;       // how many sheets around the open spread get textures
+const TEX_ROTATION = 0;
+const WINDOW = 4;
 
 // ---- RECENTER TUNING ----
-const RECENTER_SPEED = 4;  // higher = snappier slide
-const RECENTER_TUNE = 1;   // 1 = exact centering; nudge (e.g. 0.9 or 1.1) if it looks slightly off
+const RECENTER_SPEED = 4;
+const SPINE_NUDGE = 0;     // model units. If the open book is still off, nudge this (try ±0.02, ±0.05)
+const DEBUG_SPINE = true;  // red dot at the hinge pivot. Set false when done
 
 type Sheet = { mesh: THREE.Mesh; front: THREE.Mesh; back: THREE.Mesh };
 
-// Adds a thin plane on one face of the sheet and returns it.
-// Safe to call more than once: it reuses an existing face instead of adding a duplicate.
 function makeFace(mesh: THREE.Mesh, side: 1 | -1): THREE.Mesh {
   const tag = side === 1 ? "front" : "back";
 
@@ -41,7 +40,7 @@ function makeFace(mesh: THREE.Mesh, side: 1 | -1): THREE.Mesh {
   const size = box.getSize(new THREE.Vector3());
   const center = box.getCenter(new THREE.Vector3());
   const dims = [size.x, size.y, size.z];
-  const t = dims.indexOf(Math.min(...dims)); // thickness axis
+  const t = dims.indexOf(Math.min(...dims));
 
   const [w, h] = t === 2 ? [size.x, size.y] : t === 1 ? [size.x, size.z] : [size.z, size.y];
   const plane = new THREE.PlaneGeometry(w, h);
@@ -55,7 +54,7 @@ function makeFace(mesh: THREE.Mesh, side: 1 | -1): THREE.Mesh {
   if (t === 0) pos.x += offset; else if (t === 1) pos.y += offset; else pos.z += offset;
 
   const mat = new THREE.MeshStandardMaterial({
-    color: "#ffffff", // white = show the texture as-is
+    color: "#ffffff",
     roughness: 0.9,
     side: THREE.DoubleSide,
     polygonOffset: true,
@@ -64,7 +63,7 @@ function makeFace(mesh: THREE.Mesh, side: 1 | -1): THREE.Mesh {
   });
   const face = new THREE.Mesh(plane, mat);
   face.position.copy(pos);
-  face.visible = false; // shown only once its texture is ready
+  face.visible = false;
   face.userData = { isFace: true, side: tag, key: "" };
   mesh.add(face);
   return face;
@@ -77,6 +76,7 @@ export default function BookModel() {
   const pages = usePagesStore((s) => s.pages);
 
   const groupRef = useRef<THREE.Group>(null);
+  const pivotX = useRef<number | null>(null); // spine x, measured in the model's own units
 
   const sheetCount = Math.min(Math.ceil(pages.length / 2), 61);
 
@@ -85,30 +85,46 @@ export default function BookModel() {
     const sheets: THREE.Mesh[] = [];
     const back: THREE.Mesh[] = [];
     scene.traverse((o) => {
-      if (!(o as THREE.Mesh).isMesh || o.userData.isFace) return;
+      if (!(o as THREE.Mesh).isMesh || o.userData.isFace || o.userData.isDebug) return;
       if (/front/i.test(o.name)) front.push(o as THREE.Mesh);
       else if (/^page([._]?\d+)?$/i.test(o.name)) sheets.push(o as THREE.Mesh);
       else if (/back/i.test(o.name)) back.push(o as THREE.Mesh);
     });
     const num = (o: THREE.Object3D) => parseInt(o.name.replace(/\D/g, "") || "0");
     sheets.sort((a, b) => num(a) - num(b));
-    // useGLTF caches the scene, so only record the closed angle the first time
     [...front, ...sheets, ...back].forEach((o) => {
       if (o.userData.baseRot === undefined) o.userData.baseRot = o.rotation[AXIS];
     });
     return { front, sheets, back };
   }, [scene]);
 
-  // Half the page width = distance from the spine to the middle of a closed book
+  // Distance from the hinge pivot to the middle of a page (page origin = hinge)
   const halfWidth = useMemo(() => {
     const sheet = parts.sheets[0];
     if (!sheet) return 0;
     sheet.geometry.computeBoundingBox();
     const box = sheet.geometry.boundingBox!;
-    return (box.min.x + box.max.x) / 2; // ~1.21 from your logs
+    return (box.min.x + box.max.x) / 2;
   }, [parts]);
 
-  // Two face overlays per sheet. Reused if they exist, and keys reset so a remount repaints.
+  // Debug dot at the pivot, so you can see whether it sits on the visual spine
+  useEffect(() => {
+    const sheet = parts.sheets[0];
+    if (!DEBUG_SPINE || !sheet) return;
+    const dot = new THREE.Mesh(
+      new THREE.SphereGeometry(0.04),
+      new THREE.MeshBasicMaterial({ color: "red", depthTest: false })
+    );
+    dot.userData.isDebug = true;
+    dot.renderOrder = 999;
+    sheet.add(dot);
+    return () => {
+      sheet.remove(dot);
+      dot.geometry.dispose();
+      (dot.material as THREE.Material).dispose();
+    };
+  }, [parts]);
+
   const faces: Sheet[] = useMemo(
     () =>
       parts.sheets.map((mesh) => {
@@ -121,7 +137,6 @@ export default function BookModel() {
     [parts]
   );
 
-  // Only the sheets the user actually needs take part in flipping
   const flippers = useMemo(
     () => [...parts.front, ...parts.sheets.slice(0, sheetCount), ...parts.back],
     [parts, sheetCount]
@@ -131,7 +146,6 @@ export default function BookModel() {
     setTotal(flippers.length);
   }, [flippers, setTotal]);
 
-  // Paint 2D pages onto the 3D faces
   useEffect(() => {
     faces.forEach((sheet, k) => {
       sheet.mesh.visible = k < sheetCount;
@@ -155,7 +169,7 @@ export default function BookModel() {
 
         renderPageToCanvas(page)
           .then((canvas) => {
-            if (face.userData.key !== key) return; // a newer render replaced this one
+            if (face.userData.key !== key) return;
             mat.map?.dispose();
             const tex = new THREE.CanvasTexture(canvas);
             tex.colorSpace = THREE.SRGBColorSpace;
@@ -174,21 +188,38 @@ export default function BookModel() {
   useFrame((_, dt) => {
     const current = useBookStore.getState().currentIndex;
 
-    // page flipping
     flippers.forEach((p, i) => {
       const target = p.userData.baseRot + (i < current ? Math.PI * SIGN : 0);
       p.rotation[AXIS] = THREE.MathUtils.damp(p.rotation[AXIS], target, 6, dt);
     });
 
-    // recentering
     const g = groupRef.current;
     if (!g) return;
+
+    // Measure the real spine position once (in the group's own coordinates)
+    if (pivotX.current === null && parts.sheets[0]) {
+      g.updateWorldMatrix(true, true);
+      const v = new THREE.Vector3();
+      parts.sheets[0].getWorldPosition(v);
+      g.worldToLocal(v);
+      pivotX.current = v.x;
+      console.log("spine pivot x:", v.x, "halfWidth:", halfWidth);
+    }
+    if (pivotX.current === null) return;
+
+    const spine = pivotX.current + SPINE_NUDGE;
     const total = flippers.length;
-    const shift = halfWidth * MODEL_SCALE * RECENTER_TUNE;
-    const targetX =
-      current <= 0 ? MODEL_POSITION[0]       // closed, front up
-      : current >= total ? MODEL_POSITION[0] + 2 * shift // closed, back up
-      : MODEL_POSITION[0] + shift;                           // open
+
+    // Put the right thing at screen center:
+    //  closed (front up): middle of the pages  = spine + halfWidth
+    //  open:              the spine itself
+    //  closed (back up):  middle of the pages  = spine - halfWidth
+    const centerLocal =
+      current <= 0 ? spine + halfWidth
+      : current >= total ? spine - halfWidth
+      : spine;
+
+    const targetX = MODEL_POSITION[0] - centerLocal * MODEL_SCALE;
     g.position.x = THREE.MathUtils.damp(g.position.x, targetX, RECENTER_SPEED, dt);
   });
 
