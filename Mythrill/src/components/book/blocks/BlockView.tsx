@@ -2,11 +2,22 @@ import { useState, type CSSProperties } from "react";
 import type { Block } from "../../../types/book";
 import { usePagesStore } from "../../../store/usePagesStore";
 
+const DEFAULT_TEXT_CONTENT = "Double-click to edit";
+
 type Props = { block: Block; onSelect: () => void };
 
 export default function BlockView({ block, onSelect }: Props) {
   const updateBlock = usePagesStore((s) => s.updateBlock);
   const [editing, setEditing] = useState(false);
+  const textStyle: CSSProperties = {
+    ...(block.fontFamily ? { fontFamily: block.fontFamily } : {}),
+    ...(block.fontSize ? { fontSize: block.fontSize } : {}),
+    ...(block.color ? { color: block.color } : {}),
+    ...(block.bold ? { fontWeight: 700 } : {}),
+    ...(block.italic ? { fontStyle: "italic" } : {}),
+    ...(block.underline ? { textDecoration: "underline" } : {}),
+    ...(block.textAlign ? { textAlign: block.textAlign } : {}),
+  };
 
   const style: CSSProperties = {
     position: "absolute",
@@ -34,15 +45,21 @@ export default function BlockView({ block, onSelect }: Props) {
         (editing ? (
           <textarea
             autoFocus
-            defaultValue={block.content}
+            defaultValue={block.content === DEFAULT_TEXT_CONTENT ? "" : block.content}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") {
+                e.preventDefault();
+                e.currentTarget.blur();
+              }
+            }}
             onBlur={(e) => {
               if (e.target.value !== block.content) updateBlock(block.id, { content: e.target.value });
               setEditing(false);
             }}
-            style={{ width: "100%", height: "100%", font: "inherit", resize: "none", boxSizing: "border-box" }}
+            style={{ ...textStyle, width: "100%", height: "100%", resize: "none", boxSizing: "border-box" }}
           />
         ) : (
-          <div style={{ whiteSpace: "pre-wrap", width: "100%", height: "100%", overflow: "hidden" }}>
+          <div style={{ ...textStyle, whiteSpace: "pre-wrap", width: "100%", height: "100%", overflow: "hidden" }}>
             {block.content}
           </div>
         ))}

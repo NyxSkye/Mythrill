@@ -1,4 +1,5 @@
 export type BlockType = "text" | "image" | "sticker";
+export type TextAlignment = "left" | "center" | "right";
 
 export type Block = {
   id: string;
@@ -9,6 +10,13 @@ export type Block = {
   height: number;
   rotation: number;
   content: string;
+  fontFamily?: string;
+  fontSize?: number;
+  color?: string;
+  bold?: boolean;
+  italic?: boolean;
+  underline?: boolean;
+  textAlign?: TextAlignment;
 };
 
 export type Page = {
