@@ -22,7 +22,6 @@ const WINDOW = 4;
 // ---- RECENTER TUNING ----
 const RECENTER_SPEED = 4;
 const SPINE_NUDGE = 0;     // model units. If the open book is still off, nudge this (try ±0.02, ±0.05)
-const DEBUG_SPINE = true;  // red dot at the hinge pivot. Set false when done
 
 type Sheet = { mesh: THREE.Mesh; front: THREE.Mesh; back: THREE.Mesh };
 
@@ -85,7 +84,7 @@ export default function BookModel() {
     const sheets: THREE.Mesh[] = [];
     const back: THREE.Mesh[] = [];
     scene.traverse((o) => {
-      if (!(o as THREE.Mesh).isMesh || o.userData.isFace || o.userData.isDebug) return;
+      if (!(o as THREE.Mesh).isMesh || o.userData.isFace) return;
       if (/front/i.test(o.name)) front.push(o as THREE.Mesh);
       else if (/^page([._]?\d+)?$/i.test(o.name)) sheets.push(o as THREE.Mesh);
       else if (/back/i.test(o.name)) back.push(o as THREE.Mesh);
@@ -105,24 +104,6 @@ export default function BookModel() {
     sheet.geometry.computeBoundingBox();
     const box = sheet.geometry.boundingBox!;
     return (box.min.x + box.max.x) / 2;
-  }, [parts]);
-
-  // Debug dot at the pivot, so you can see whether it sits on the visual spine
-  useEffect(() => {
-    const sheet = parts.sheets[0];
-    if (!DEBUG_SPINE || !sheet) return;
-    const dot = new THREE.Mesh(
-      new THREE.SphereGeometry(0.04),
-      new THREE.MeshBasicMaterial({ color: "red", depthTest: false })
-    );
-    dot.userData.isDebug = true;
-    dot.renderOrder = 999;
-    sheet.add(dot);
-    return () => {
-      sheet.remove(dot);
-      dot.geometry.dispose();
-      (dot.material as THREE.Material).dispose();
-    };
   }, [parts]);
 
   const faces: Sheet[] = useMemo(
