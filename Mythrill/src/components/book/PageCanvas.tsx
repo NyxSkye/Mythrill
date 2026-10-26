@@ -6,8 +6,8 @@ import { usePagesStore } from "../../store/usePagesStore";
 import { PAPERS } from "../../lib/papers";
 import BlockView from "./blocks/BlockView";
 
-export const PAGE_W = 420;
-export const PAGE_H = 570;
+export const PAGE_W = 290;
+export const PAGE_H = 410;
 
 type Props = { page: Page | undefined; side: "left" | "right"; active: boolean };
 

@@ -21,8 +21,16 @@ const WINDOW = 4;       // how many sheets around the open spread get textures
 
 type Sheet = { mesh: THREE.Mesh; front: THREE.Mesh; back: THREE.Mesh };
 
-// Adds a thin plane on one face of the sheet and returns it
+// Adds a thin plane on one face of the sheet and returns it.
+// Safe to call more than once: it reuses an existing face instead of adding a duplicate.
 function makeFace(mesh: THREE.Mesh, side: 1 | -1): THREE.Mesh {
+  const tag = side === 1 ? "front" : "back";
+
+  const existing = mesh.children.find(
+    (c) => c.userData.isFace && c.userData.side === tag
+  ) as THREE.Mesh | undefined;
+  if (existing) return existing;
+
   const geo = mesh.geometry;
   geo.computeBoundingBox();
   const box = geo.boundingBox!;
@@ -43,12 +51,17 @@ function makeFace(mesh: THREE.Mesh, side: 1 | -1): THREE.Mesh {
   if (t === 0) pos.x += offset; else if (t === 1) pos.y += offset; else pos.z += offset;
 
   const mat = new THREE.MeshStandardMaterial({
-    color: "#ffffff", roughness: 0.9, polygonOffset: true, polygonOffsetFactor: -1,
+    color: "#ffffff", // white = show the texture as-is
+    roughness: 0.9,
+    side: THREE.DoubleSide,
+    polygonOffset: true,
+    polygonOffsetFactor: -2,
+    polygonOffsetUnits: -2,
   });
   const face = new THREE.Mesh(plane, mat);
   face.position.copy(pos);
-  face.visible = false;
-  face.userData = { isFace: true, key: "" };
+  face.visible = false; // shown only once its texture is ready
+  face.userData = { isFace: true, side: tag, key: "" };
   mesh.add(face);
   return face;
 }
@@ -73,16 +86,22 @@ export default function BookModel() {
     });
     const num = (o: THREE.Object3D) => parseInt(o.name.replace(/\D/g, "") || "0");
     sheets.sort((a, b) => num(a) - num(b));
-    [...front, ...sheets, ...back].forEach((o) => (o.userData.baseRot = o.rotation[AXIS]));
+    // useGLTF caches the scene, so only record the closed angle the first time
+    [...front, ...sheets, ...back].forEach((o) => {
+      if (o.userData.baseRot === undefined) o.userData.baseRot = o.rotation[AXIS];
+    });
     return { front, sheets, back };
   }, [scene]);
 
-  // Build the two face overlays for every sheet (once)
+  // Two face overlays per sheet. Reused if they exist, and keys reset so a remount repaints.
   const faces: Sheet[] = useMemo(
     () =>
       parts.sheets.map((mesh) => {
-        mesh.children.filter((c) => c.userData.isFace).forEach((c) => mesh.remove(c));
-        return { mesh, front: makeFace(mesh, 1), back: makeFace(mesh, -1) };
+        const front = makeFace(mesh, 1);
+        const back = makeFace(mesh, -1);
+        front.userData.key = "";
+        back.userData.key = "";
+        return { mesh, front, back };
       }),
     [parts]
   );
@@ -118,18 +137,21 @@ export default function BookModel() {
           face.visible = false;
           return;
         }
-        renderPageToCanvas(page).then((canvas) => {
-          if (face.userData.key !== key) return; // a newer render replaced this one
-          mat.map?.dispose();
-          const tex = new THREE.CanvasTexture(canvas);
-          tex.colorSpace = THREE.SRGBColorSpace;
-          tex.anisotropy = 8;
-          tex.center.set(0.5, 0.5);
-          tex.rotation = TEX_ROTATION;
-          mat.map = tex;
-          mat.needsUpdate = true;
-          face.visible = true;
-        });
+
+        renderPageToCanvas(page)
+          .then((canvas) => {
+            if (face.userData.key !== key) return; // a newer render replaced this one
+            mat.map?.dispose();
+            const tex = new THREE.CanvasTexture(canvas);
+            tex.colorSpace = THREE.SRGBColorSpace;
+            tex.anisotropy = 8;
+            tex.center.set(0.5, 0.5);
+            tex.rotation = TEX_ROTATION;
+            mat.map = tex;
+            mat.needsUpdate = true;
+            face.visible = true;
+          })
+          .catch((err) => console.error("page render failed:", err));
       });
     });
   }, [faces, pages, currentIndex, sheetCount]);

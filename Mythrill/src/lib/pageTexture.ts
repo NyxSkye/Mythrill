@@ -94,7 +94,7 @@ export async function renderPageToCanvas(page: Page | undefined, scale = 1.5) {
   const ctx = canvas.getContext("2d")!;
   ctx.scale(scale, scale);
 
-  const tex = await loadImage("/textures/page.jpg");
+  const tex = await loadImage("/textures/page.");
   drawPaper(ctx, page?.background ?? "plain", tex);
   for (const b of page?.blocks ?? []) await drawBlock(ctx, b);
   return canvas;
